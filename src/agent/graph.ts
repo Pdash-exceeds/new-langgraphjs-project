@@ -1,104 +1,330 @@
-/**
- * Starter LangGraph.js Template
- * Make this code your own!
- */
-import { StateGraph } from "@langchain/langgraph";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable import/no-extraneous-dependencies */
+import { Send, StateGraph } from "@langchain/langgraph";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { StateAnnotation } from "./state.js";
+import * as hub from "langchain/hub";
+import { ChatOpenAI, convertPromptToOpenAI } from "@langchain/openai";
+import { loadDiff } from "./utils.js";
 
-/**
- * Define a node, these do the work of the graph and should have most of the logic.
- * Must return a subset of the properties set in StateAnnotation.
- * @param state The current state of the graph.
- * @param config Extra parameters passed into the state graph.
- * @returns Some subset of parameters of the graph state, used to update the state
- * for the edges and nodes executed next.
- */
-const callModel = async (
+export const gpt_4o_model = new ChatOpenAI({
+  model: "gpt-4o-2024-08-06",
+  maxConcurrency: 10,
+  maxRetries: 1,
+  temperature: 0,
+});
+
+const identifyLevels = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
 ): Promise<typeof StateAnnotation.Update> => {
-  /**
-   * Do some work... (e.g. call an LLM)
-   * For example, with LangChain you could do something like:
-   *
-   * ```bash
-   * $ npm i @langchain/anthropic
-   * ```
-   *
-   * ```ts
-   * import { ChatAnthropic } from "@langchain/anthropic";
-   * const model = new ChatAnthropic({
-   *   model: "claude-3-5-sonnet-20240620",
-   *   apiKey: process.env.ANTHROPIC_API_KEY,
-   * });
-   * const res = await model.invoke(state.messages);
-   * ```
-   *
-   * Or, with an SDK directly:
-   *
-   * ```bash
-   * $ npm i openai
-   * ```
-   *
-   * ```ts
-   * import OpenAI from "openai";
-   * const openai = new OpenAI({
-   *   apiKey: process.env.OPENAI_API_KEY,
-   * });
-   *
-   * const chatCompletion = await openai.chat.completions.create({
-   *   messages: [{
-   *     role: state.messages[0]._getType(),
-   *     content: state.messages[0].content,
-   *   }],
-   *   model: "gpt-4o-mini",
-   * });
-   * ```
-   */
   console.log("Current state:", state);
   return {
     messages: [
       {
         role: "assistant",
-        content: `Hi there! How are you?`,
+        content: `I'm identifying levels!`,
+      },
+    ],
+  };
+};
+const identifyJobFunction = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm identifying Job Functions!`,
       },
     ],
   };
 };
 
-/**
- * Routing function: Determines whether to continue research or end the builder.
- * This function decides if the gathered information is satisfactory or if more research is needed.
- *
- * @param state - The current state of the research builder
- * @returns Either "callModel" to continue research or END to finish the builder
- */
-export const route = (
+const join1 = async (
   state: typeof StateAnnotation.State,
-): "__end__" | "callModel" => {
-  if (state.messages.length > 0) {
-    return "__end__";
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm joining!`,
+      },
+    ],
+  };
+};
+const sumarizeCommits = async (
+  data: {
+    hash: string;
+  },
+  state: typeof StateAnnotation.State,
+): Promise<Partial<typeof StateAnnotation.Update>> => {
+  console.log("Current state:", state);
+  console.log("Data:", data);
+
+  const diff = loadDiff(`src/agent/${data.hash}.txt`);
+
+  const prompt_message = await hub.pull("commit-prompt");
+  const promptMessageText = await prompt_message.invoke({
+    diff: diff,
+    message: "Summarize the commit",
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await gpt_4o_model.invoke(prompt);
+    return { code_evaluation: [String(response.content)] };
+  } catch (e) {
+    console.error(e);
   }
+
+  return {};
+};
+const weeklySummaries = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm summarizing weekly!`,
+      },
+    ],
+  };
+};
+
+const join2 = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm joining 2!`,
+      },
+    ],
+  };
+};
+const generateWorklogSummary = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm generating worklog summary!`,
+      },
+    ],
+  };
+};
+
+const generateCrafsmanshipSummary = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm generating craftsmanship summary!`,
+      },
+    ],
+  };
+};
+
+const generateExecutionSummary = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm generating execution summary!`,
+      },
+    ],
+  };
+};
+const join3 = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm joining 3!`,
+      },
+    ],
+  };
+};
+
+const combineWorkLogSummaries = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm combining worklog summaries!`,
+      },
+    ],
+  };
+};
+
+const combineExecutionSummaries = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm combining execution summaries!`,
+      },
+    ],
+  };
+};
+
+const combineCrafsmanshipSummaries = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm combining craftsmanship summaries!`,
+      },
+    ],
+  };
+};
+
+const join4 = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm joining 4!`,
+      },
+    ],
+  };
+};
+
+const finalReview = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm reviewing!`,
+      },
+    ],
+  };
+};
+const routeToSumarizeCommits = (state: typeof StateAnnotation.State) => {
+  let sends: any[] = [];
+
+  // const hashes = config?.configurable?.hashes
+  //   ? config.configurable.hashes
+  //   : ["testhash1", "testhash2"];
+  const hashes = ["hash1", "hash2"];
+
+  hashes?.map((hash: string) => {
+    sends = sends.concat(new Send("sumarizeCommits", { hash }));
+  });
+  return sends;
+};
+
+const routeToWeeklySummaries = (
+  state: typeof StateAnnotation.State,
+): "weeklySummary" => {
   // Loop back
-  return "callModel";
+  return "weeklySummary";
+};
+const weeklySummary = async (
+  state: typeof StateAnnotation.State,
+  _config: RunnableConfig,
+): Promise<typeof StateAnnotation.Update> => {
+  console.log("Current state:", state);
+  return {
+    messages: [
+      {
+        role: "assistant",
+        content: `I'm summarizing weekly!`,
+      },
+    ],
+  };
 };
 
 // Finally, create the graph itself.
 const builder = new StateGraph(StateAnnotation)
-  // Add the nodes to do the work.
-  // Chaining the nodes together in this way
-  // updates the types of the StateGraph instance
-  // so you have static type checking when it comes time
-  // to add the edges.
-  .addNode("callModel", callModel)
-  // Regular edges mean "always transition to node B after node A is done"
-  // The "__start__" and "__end__" nodes are "virtual" nodes that are always present
-  // and represent the beginning and end of the builder.
-  .addEdge("__start__", "callModel")
-  // Conditional edges optionally route to different nodes (or end)
-  .addConditionalEdges("callModel", route);
+  .addNode("identifyLevels", identifyLevels)
+  .addNode("identifyJobFunction", identifyJobFunction)
+  .addNode("join1", join1)
+  .addNode("sumarizeCommits", sumarizeCommits)
+  .addNode("weeklySummaries", weeklySummaries)
+  .addNode("weeklySummary", weeklySummary)
+  .addNode("join2", join2)
+  .addNode("generateWorklogSummary", generateWorklogSummary)
+  .addNode("generateExecutionSummary", generateExecutionSummary)
+  .addNode("generateCrafsmanshipSummary", generateCrafsmanshipSummary)
+  .addNode("join3", join3)
+  .addNode("combineWorkLogSummaries", combineWorkLogSummaries)
+  .addNode("combineExecutionSummaries", combineExecutionSummaries)
+  .addNode("combineCrafsmanshipSummaries", combineCrafsmanshipSummaries)
+  .addNode("join4", join4)
+  .addNode("finalReview", finalReview)
+  .addEdge("__start__", "identifyLevels")
+  .addEdge("__start__", "identifyJobFunction")
+  .addEdge("identifyLevels", "join1")
+  .addEdge("identifyJobFunction", "join1")
+  .addConditionalEdges("join1", routeToSumarizeCommits, ["sumarizeCommits"])
+  .addEdge("sumarizeCommits", "weeklySummaries")
+  .addConditionalEdges("weeklySummaries", routeToWeeklySummaries, [
+    "weeklySummary",
+  ])
+  .addEdge("weeklySummary", "join2")
+  .addEdge("join2", "generateWorklogSummary")
+  .addEdge("join2", "generateExecutionSummary")
+  .addEdge("join2", "generateCrafsmanshipSummary")
+  .addEdge("generateWorklogSummary", "join3")
+  .addEdge("generateExecutionSummary", "join3")
+  .addEdge("generateCrafsmanshipSummary", "join3")
+  .addEdge("join3", "combineWorkLogSummaries")
+  .addEdge("join3", "combineExecutionSummaries")
+  .addEdge("join3", "combineCrafsmanshipSummaries")
+  .addEdge("combineWorkLogSummaries", "join4")
+  .addEdge("combineExecutionSummaries", "join4")
+  .addEdge("combineCrafsmanshipSummaries", "join4")
+  .addEdge("join4", "finalReview")
+  .addEdge("finalReview", "__end__");
 
 export const graph = builder.compile();
 
-graph.name = "New Agent";
+graph.name = "Review Writer";
