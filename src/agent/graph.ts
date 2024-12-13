@@ -1,10 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable import/no-extraneous-dependencies */
-import { Send, StateGraph } from "@langchain/langgraph";
+/* eslint-disable prefer-const */
 import { RunnableConfig } from "@langchain/core/runnables";
-import { CodeEvaluationSchema, StateAnnotation } from "./state.js";
-import * as hub from "langchain/hub";
+import { MemorySaver, Send, StateGraph } from "@langchain/langgraph";
 import { ChatOpenAI, convertPromptToOpenAI } from "@langchain/openai";
+import * as hub from "langchain/hub";
+import {
+  CodeEvaluationSchema,
+  StateAnnotation,
+  WeeklyEvaluationSchema,
+} from "./state.js";
 import { loadDiff } from "./utils.js";
 
 export const gpt_4o_model = new ChatOpenAI({
@@ -51,6 +55,7 @@ const identifyJobFunction = async (
         content: `I'm identifying Job Functions!`,
       },
     ],
+    role: "Software Engineer",
   };
 };
 
@@ -131,46 +136,81 @@ const join2 = async (
 const generateWorklogSummary = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
-): Promise<typeof StateAnnotation.Update> => {
+) => {
   console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm generating worklog summary!`,
-      },
-    ],
-  };
+  const prompt_message = await hub.pull("worklog-summaries-prompt");
+  const weeklySummaries = state.weekly_summaries
+    .map((e) => e.evaluation)
+    .join("\n <Next Summary> \n");
+
+  const promptMessageText = await prompt_message.invoke({
+    weekly_project_summaries: weeklySummaries,
+    role: state.role,
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel().invoke(prompt);
+
+    return { worklog_summary: response.content };
+  } catch (e) {
+    console.error(e);
+  }
+  return {};
 };
 
 const generateCrafsmanshipSummary = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
-): Promise<typeof StateAnnotation.Update> => {
-  console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm generating craftsmanship summary!`,
-      },
-    ],
-  };
+) => {
+  const prompt_message = await hub.pull("craftsmanship-summaries-prompt");
+  const weeklySummaries = state.weekly_summaries
+    .map((e) => e.evaluation)
+    .join("\n <Next Summary> \n");
+
+  const promptMessageText = await prompt_message.invoke({
+    weekly_project_summaries: weeklySummaries,
+    role: state.role,
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel().invoke(prompt);
+
+    return { crafsmanship_summary: response.content };
+  } catch (e) {
+    console.error(e);
+  }
+  return {};
 };
 
 const generateExecutionSummary = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
-): Promise<typeof StateAnnotation.Update> => {
+) => {
   console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm generating execution summary!`,
-      },
-    ],
-  };
+  const prompt_message = await hub.pull("execution-summaries-prompt");
+  const weeklySummaries = state.weekly_summaries
+    .map((e) => e.evaluation)
+    .join("\n <Next Summary> \n");
+
+  const promptMessageText = await prompt_message.invoke({
+    weekly_project_summaries: weeklySummaries,
+    role: state.role,
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel().invoke(prompt);
+
+    return { execution_summary: response.content };
+  } catch (e) {
+    console.error(e);
+  }
+  return {};
 };
 const join3 = async (
   state: typeof StateAnnotation.State,
@@ -190,46 +230,85 @@ const join3 = async (
 const combineWorkLogSummaries = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
-): Promise<typeof StateAnnotation.Update> => {
+) => {
   console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm combining worklog summaries!`,
-      },
-    ],
-  };
+  const prompt_message = await hub.pull("combined-summaries-prompt");
+  const facet = "the worklog that I did in various projects";
+  const combinedSummary = state.worklog_summary;
+
+  const promptMessageText = await prompt_message.invoke({
+    project_summaries: combinedSummary,
+    role: state.role,
+    facet,
+    artifacts: "No documents available",
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel().invoke(prompt);
+
+    return { combined_worklog_summary: response.content };
+  } catch (e) {
+    console.error(e);
+  }
+  return {};
 };
 
 const combineExecutionSummaries = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
-): Promise<typeof StateAnnotation.Update> => {
+) => {
   console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm combining execution summaries!`,
-      },
-    ],
-  };
+  const prompt_message = await hub.pull("combined-summaries-prompt");
+  const facet = "the execution that I did in various projects";
+  const combinedSummary = state.execution_summary;
+
+  const promptMessageText = await prompt_message.invoke({
+    project_summaries: combinedSummary,
+    role: state.role,
+    facet,
+    artifacts: "No documents available",
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel().invoke(prompt);
+
+    return { combined_execution_summary: response.content };
+  } catch (e) {
+    console.error(e);
+  }
+  return {};
 };
 
 const combineCrafsmanshipSummaries = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
-): Promise<typeof StateAnnotation.Update> => {
+) => {
   console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm combining craftsmanship summaries!`,
-      },
-    ],
-  };
+  const prompt_message = await hub.pull("combined-summaries-prompt");
+  const facet = "the craftsmanship that I did in various projects";
+  const combinedSummary = state.crafsmanship_summary;
+
+  const promptMessageText = await prompt_message.invoke({
+    project_summaries: combinedSummary,
+    role: state.role,
+    facet,
+    artifacts: "No documents available",
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel().invoke(prompt);
+
+    return { combined_crafsmanship_summary: response.content };
+  } catch (e) {
+    console.error(e);
+  }
+  return {};
 };
 
 const join4 = async (
@@ -250,24 +329,37 @@ const join4 = async (
 const finalReview = async (
   state: typeof StateAnnotation.State,
   _config: RunnableConfig,
-): Promise<typeof StateAnnotation.Update> => {
+) => {
   console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm reviewing!`,
-      },
-    ],
-  };
+  const prompt_message = await hub.pull("exceeds-review-prompt");
+
+  const promptMessageText = await prompt_message.invoke({
+    first_name: "John",
+    last_name: "Doe",
+    email: "john@example.com",
+    organization: "Example Inc.",
+    job_title: state.role,
+    review_period_start_date: "2022-01-01",
+    review_period_end_date: "2022-01-07",
+    worklog_summary: state.combined_worklog_summary,
+    execution_summary: state.combined_execution_summary,
+    craftsmanship_summary: state.combined_crafsmanship_summary,
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel().invoke(prompt);
+
+    return { final_review: response.content };
+  } catch (e) {
+    console.error(e);
+  }
+  return {};
 };
 const routeToSumarizeCommits = (_state: typeof StateAnnotation.State) => {
   let sends: any[] = [];
 
-  // const hashes = config?.configurable?.hashes
-  //   ? config.configurable.hashes
-  //   : ["testhash1", "testhash2"];
-  //const hashes = ["hash1", "hash2"];
   const hashes = [
     { hash: "hash1", repo: "My First Repo" },
     { hash: "hash2", repo: "My Second Repo" },
@@ -310,12 +402,17 @@ const weeklySummary = async (
     evaluations: any[];
     state: typeof StateAnnotation.State;
   },
+
   _config?: RunnableConfig,
 ): Promise<typeof StateAnnotation.Update> => {
   console.log("Current state:", data.state);
 
   // Combine summaries from the batch
-  const weeklySummaries = data.evaluations.map((e) => e.evaluation).join("\n");
+  const weeklySummaries = data.evaluations
+    .map((e) => e.evaluation)
+    .join("\n <Next Summary> \n");
+
+  console.log(weeklySummaries);
 
   const prompt_message = await hub.pull("weekly-summary-prompt");
   const promptMessageText = await prompt_message.invoke({
@@ -325,11 +422,12 @@ const weeklySummary = async (
   const { messages } = convertPromptToOpenAI(promptMessageText);
   const prompt: any = messages[1]?.content ? messages[1].content : "";
   try {
-    const response = await getCurrentModel()
-      .withStructuredOutput(CodeEvaluationSchema, {
+    let response = await getCurrentModel()
+      .withStructuredOutput(WeeklyEvaluationSchema, {
         name: "weekly_summary",
       })
       .invoke(prompt);
+    response.project = data.project;
     return { weekly_summaries: [response] };
   } catch (e) {
     console.error(e);
@@ -381,6 +479,8 @@ const builder = new StateGraph(StateAnnotation)
   .addEdge("join4", "finalReview")
   .addEdge("finalReview", "__end__");
 
-export const graph = builder.compile();
+let memory = new MemorySaver();
+
+export const graph = builder.compile({ checkpointer: memory });
 
 graph.name = "Review Writer";
