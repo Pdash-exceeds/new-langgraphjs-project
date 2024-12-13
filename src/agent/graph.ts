@@ -2,7 +2,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { Send, StateGraph } from "@langchain/langgraph";
 import { RunnableConfig } from "@langchain/core/runnables";
-import { StateAnnotation } from "./state.js";
+import { CodeEvaluationSchema, StateAnnotation } from "./state.js";
 import * as hub from "langchain/hub";
 import { ChatOpenAI, convertPromptToOpenAI } from "@langchain/openai";
 import { loadDiff } from "./utils.js";
@@ -13,6 +13,17 @@ export const gpt_4o_model = new ChatOpenAI({
   maxRetries: 1,
   temperature: 0,
 });
+
+export const gpt_4o_mini_model = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  maxConcurrency: 10,
+  maxRetries: 1,
+  temperature: 0,
+});
+
+const getCurrentModel = () => {
+  return gpt_4o_model;
+};
 
 const identifyLevels = async (
   state: typeof StateAnnotation.State,
@@ -57,13 +68,12 @@ const join1 = async (
     ],
   };
 };
-const sumarizeCommits = async (
-  data: {
-    hash: string;
-  },
-  state: typeof StateAnnotation.State,
-): Promise<Partial<typeof StateAnnotation.Update>> => {
-  console.log("Current state:", state);
+const sumarizeCommits = async (data: {
+  hash: string;
+  repo: string;
+  state: typeof StateAnnotation.State;
+}): Promise<Partial<typeof StateAnnotation.Update>> => {
+  console.log("Current state:", data.state);
   console.log("Data:", data);
 
   const diff = loadDiff(`src/agent/${data.hash}.txt`);
@@ -77,8 +87,12 @@ const sumarizeCommits = async (
   const { messages } = convertPromptToOpenAI(promptMessageText);
   const prompt: any = messages[1]?.content ? messages[1].content : "";
   try {
-    const response = await gpt_4o_model.invoke(prompt);
-    return { code_evaluation: [String(response.content)] };
+    const response = await getCurrentModel()
+      .withStructuredOutput(CodeEvaluationSchema, {
+        name: "code_evaluation",
+      })
+      .invoke(prompt);
+    return { code_evaluation: [response] };
   } catch (e) {
     console.error(e);
   }
@@ -247,39 +261,81 @@ const finalReview = async (
     ],
   };
 };
-const routeToSumarizeCommits = (state: typeof StateAnnotation.State) => {
+const routeToSumarizeCommits = (_state: typeof StateAnnotation.State) => {
   let sends: any[] = [];
 
   // const hashes = config?.configurable?.hashes
   //   ? config.configurable.hashes
   //   : ["testhash1", "testhash2"];
-  const hashes = ["hash1", "hash2"];
+  //const hashes = ["hash1", "hash2"];
+  const hashes = [
+    { hash: "hash1", repo: "My First Repo" },
+    { hash: "hash2", repo: "My Second Repo" },
+  ];
 
-  hashes?.map((hash: string) => {
-    sends = sends.concat(new Send("sumarizeCommits", { hash }));
+  hashes?.map((aHash: { hash: string; repo: string }) => {
+    sends = sends.concat(
+      new Send("sumarizeCommits", { hash: aHash.hash, repo: aHash.repo }),
+    );
   });
   return sends;
 };
 
-const routeToWeeklySummaries = (
-  state: typeof StateAnnotation.State,
-): "weeklySummary" => {
-  // Loop back
-  return "weeklySummary";
+const routeToWeeklySummaries = (state: typeof StateAnnotation.State) => {
+  let sends: any[] = [];
+  const evaluations = state.code_evaluation;
+  const groupedByProject = evaluations.reduce(
+    (acc, evaluation) => {
+      const { project } = evaluation;
+      if (!acc[project]) {
+        acc[project] = [];
+      }
+      acc[project].push(evaluation);
+      return acc;
+    },
+    {} as Record<string, typeof state.code_evaluation>,
+  );
+
+  Object.entries(groupedByProject).forEach(([project, evaluations]) => {
+    console.log(`Project: ${project}`);
+    console.log(`Evaluations: ${evaluations}`);
+    sends = sends.concat(new Send("weeklySummary", { project, evaluations }));
+  });
+
+  return sends;
 };
 const weeklySummary = async (
-  state: typeof StateAnnotation.State,
-  _config: RunnableConfig,
+  data: {
+    project: string;
+    evaluations: any[];
+    state: typeof StateAnnotation.State;
+  },
+  _config?: RunnableConfig,
 ): Promise<typeof StateAnnotation.Update> => {
-  console.log("Current state:", state);
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: `I'm summarizing weekly!`,
-      },
-    ],
-  };
+  console.log("Current state:", data.state);
+
+  // Combine summaries from the batch
+  const weeklySummaries = data.evaluations.map((e) => e.evaluation).join("\n");
+
+  const prompt_message = await hub.pull("weekly-summary-prompt");
+  const promptMessageText = await prompt_message.invoke({
+    weeklySummaries,
+  });
+
+  const { messages } = convertPromptToOpenAI(promptMessageText);
+  const prompt: any = messages[1]?.content ? messages[1].content : "";
+  try {
+    const response = await getCurrentModel()
+      .withStructuredOutput(CodeEvaluationSchema, {
+        name: "weekly_summary",
+      })
+      .invoke(prompt);
+    return { weekly_summaries: [response] };
+  } catch (e) {
+    console.error(e);
+  }
+
+  return {};
 };
 
 // Finally, create the graph itself.
